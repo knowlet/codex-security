@@ -70,7 +70,7 @@ function fakeCodex(response: unknown) {
 }
 
 function fakeJev(choice: string) {
-  const calls: Array<{ state: unknown; questions: Record<string, unknown> }> = [];
+  const calls: Array<{\n    state: unknown;\n    questions: Readonly<Record<string, unknown>>;\n  }> = [];
   const jev: NonNullable<ClassifySeverityOptions["jev"]> = {
     async choose(state, questions) {
       calls.push({ state, questions });
