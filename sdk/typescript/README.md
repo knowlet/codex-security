@@ -911,6 +911,7 @@ restrictions.
 | Variable                                                                    | Effect                                                                                                    |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`, `CODEX_API_KEY`                                           | Scan credentials; `OPENAI_API_KEY` wins if both are set.                                                  |
+| `OPENAI_BASE_URL`                                                           | Optional built-in OpenAI provider base URL; must expose an OpenAI-compatible Responses API.               |
 | `TYPESAFE_API_KEY`                                                         | Enables TypeSafe Jev for bounded dedupe and rubric-severity decisions.                                    |
 | `TYPESAFE_BASE_URL`                                                        | Optional TypeSafe API root; defaults to `https://api.typesafe.ai`.                                       |
 | `TYPESAFE_DEFAULT_MODEL`                                                   | Optional Jev model override; defaults to `jev-latest`.                                                   |
