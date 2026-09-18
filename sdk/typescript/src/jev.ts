@@ -97,7 +97,7 @@ export function createJevChoiceClient(
       let response: Response;
       try {
         response = await fetchImpl(
-          `${baseURL.replace(/\\\/$/u, "")}/v1/systemone`,
+          `${baseURL.replace(/\/$/u, "")}/v1/systemone`,
           {
             method: "POST",
             headers: {
