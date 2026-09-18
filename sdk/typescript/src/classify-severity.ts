@@ -4,10 +4,7 @@ import { z } from "incur";
 import type { CodexSecurityConfig } from "./config.js";
 import { CodexSecurityError } from "./errors.js";
 import { workflowDigest } from "./finding-workflow.js";
-import {
-  createJevChoiceClient,
-  type JevChoiceClient,
-} from "./jev.js";
+import { createJevChoiceClient, type JevChoiceClient } from "./jev.js";
 import { prepareKnowledgeBase } from "./knowledge-base.js";
 import type { Finding, SeverityLevel } from "./models.js";
 import {
@@ -206,9 +203,7 @@ async function tryJevSeverityDecision(
     : null;
 }
 
-function conventionalRubricLevel(
-  rubricLabel: string,
-): SeverityLevel | null {
+function conventionalRubricLevel(rubricLabel: string): SeverityLevel | null {
   switch (rubricLabel.trim().toLowerCase()) {
     case "critical":
     case "urgent":
