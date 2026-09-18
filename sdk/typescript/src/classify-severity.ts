@@ -80,6 +80,7 @@ const levelSchema = z.enum([
   "low",
   "informational",
 ]);
+const confidenceSchema = z.enum(["high", "medium", "low"]);
 const textSchema = z
   .string()
   .min(1)
@@ -91,6 +92,7 @@ const decisionSchema = z
     level: levelSchema.nullable(),
     rubricLabel: textSchema.nullable(),
     rationale: textSchema,
+    confidence: confidenceSchema.nullable(),
     reviewTrigger: textSchema.nullable(),
   })
   .strict();
@@ -99,7 +101,6 @@ const explanationSchema = z
     findingId: textSchema,
     rubricLabel: textSchema.nullable(),
     rationale: textSchema,
-    confidence: z.enum(["high", "medium", "low"]).nullable(),
     reviewTrigger: textSchema.nullable(),
   })
   .strict();
@@ -149,6 +150,7 @@ async function tryJevSeverityDecision(
   delete policyFinding["severity"];
   delete policyFinding["priority"];
   let choice: string;
+  let confidence: z.infer<typeof confidenceSchema>;
   try {
     const answers = await jev.choose(
       { rubric, knowledgeBase: knowledge, finding: policyFinding },
@@ -181,10 +183,11 @@ async function tryJevSeverityDecision(
       },
     );
     choice = answers["severity"]!.choice;
-    const confidence = z
-      .enum(["high", "medium", "low"])
-      .safeParse(answers["confidence"]!.choice);
-    if (!confidence.success) return null;
+    const parsedConfidence = confidenceSchema.safeParse(
+      answers["confidence"]!.choice,
+    );
+    if (!parsedConfidence.success) return null;
+    confidence = parsedConfidence.data;
   } catch {
     options.signal?.throwIfAborted();
     return null;
@@ -198,7 +201,7 @@ async function tryJevSeverityDecision(
     ? {
         decision: "assessed",
         level: level.data,
-        confidence: confidence.data,
+        confidence,
       }
     : null;
 }
