@@ -2688,7 +2688,7 @@ export class CodexSecurity {
     const openAiBaseUrl = environmentValue(
       environment,
       "OPENAI_BASE_URL",
-    );
+    )?.trim();
     const codex = this.#dependencies.createCodex({
       ...(codexPathOverride === undefined
         ? {}
