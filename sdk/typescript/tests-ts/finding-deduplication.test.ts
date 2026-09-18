@@ -117,6 +117,11 @@ test("Jev handles bounded dedupe screening without invoking Codex", async () => 
       },
     },
     {
+      metadata: {
+        provider: "typesafe-system-one",
+        baseURL: "https://typesafe.example",
+        model: "jev-test",
+      },
       async choose(_state, questions) {
         jevQuestions = questions;
         return {
