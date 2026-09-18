@@ -3,6 +3,7 @@ import { CodexSecurityError } from "./errors.js";
 
 export const DEFAULT_JEV_MODEL = "jev-latest";
 const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
+const JEV_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface JevChoiceQuestion {
   instructions: unknown;
@@ -95,6 +96,11 @@ export function createJevChoiceClient(
       signal?.throwIfAborted();
       if (Object.keys(questions).length === 0) return {};
       let response: Response;
+      const timeoutSignal = AbortSignal.timeout(JEV_REQUEST_TIMEOUT_MS);
+      const requestSignal =
+        signal === undefined
+          ? timeoutSignal
+          : AbortSignal.any([signal, timeoutSignal]);
       try {
         response = await fetchImpl(
           `${baseURL.replace(/\/$/u, "")}/v1/systemone`,
@@ -119,7 +125,7 @@ export function createJevChoiceClient(
                 ]),
               ),
             }),
-            signal,
+            signal: requestSignal,
           },
         );
       } catch (error) {
