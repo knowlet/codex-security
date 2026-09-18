@@ -172,7 +172,7 @@ test("Jev owns the severity choice and Codex only explains the selected decision
     reviewTrigger: "Protected content in the response would increase severity.",
   };
   const { codex, calls: codexCalls } = fakeCodex(explanation);
-  const { jev, calls: jevCalls } = fakeJev("medium");
+  const { jev, calls: jevCalls } = fakeJev("medium", "low");
   const result = await classifySeverity([finding], {
     rubricPath,
     codex,
@@ -181,6 +181,7 @@ test("Jev owns the severity choice and Codex only explains the selected decision
 
   expect(result.assessments[0]).toMatchObject({
     ...assessed,
+    confidence: "low",
     source: "rubric",
   });
   expect(jevCalls).toHaveLength(1);
