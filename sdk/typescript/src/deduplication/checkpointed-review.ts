@@ -2,7 +2,10 @@ import type { JsonObject } from "../config.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { CodexSecurityError } from "../errors.js";
+import {
+  CodexSecurityError,
+  type DeduplicationReviewStage,
+} from "../errors.js";
 import type { FindingSearchScope } from "../finding-retrieval.js";
 import { FindingWorkflow, workflowDigest } from "../finding-workflow.js";
 import { CODEX_EXECUTABLE_VERSION } from "../version.js";
@@ -47,6 +50,22 @@ export async function reviewSettingsDigest(
   });
 }
 
+export interface CheckpointedDecision<T> {
+  contractVersion: number;
+  stage: DeduplicationReviewStage;
+  provider: string;
+  model: string;
+  settings?: unknown;
+  input: unknown;
+  contract: unknown;
+  validate(value: unknown): T;
+  execute(): Promise<unknown>;
+}
+
+export interface DecisionCheckpointRunner {
+  runDecision<T>(decision: CheckpointedDecision<T>): Promise<T>;
+}
+
 export class CheckpointedReviewRunner {
   constructor(
     private readonly workflow: FindingWorkflow,
@@ -73,6 +92,7 @@ export class CheckpointedReviewRunner {
       source: this.source,
       scope: this.scope,
       stage: review.stage,
+      provider: "codex",
       model: review.model,
       effort: review.effort,
       settingsDigest: this.settingsDigest,
@@ -83,10 +103,45 @@ export class CheckpointedReviewRunner {
       ]),
       contractDigest: workflowDigest(review.schema),
     };
+    return await this.runCheckpoint(
+      binding,
+      review.validate,
+      () => this.runner.run(review),
+    );
+  }
+
+  async runDecision<T>(decision: CheckpointedDecision<T>): Promise<T> {
+    const binding = {
+      version: decision.contractVersion,
+      codexVersion: `external:${decision.provider}`,
+      source: this.source,
+      scope: this.scope,
+      stage: decision.stage,
+      provider: decision.provider,
+      model: decision.model,
+      effort: "system-one",
+      ...(decision.settings === undefined
+        ? {}
+        : { settingsDigest: workflowDigest(decision.settings) }),
+      promptDigest: workflowDigest(decision.input),
+      contractDigest: workflowDigest(decision.contract),
+    };
+    return await this.runCheckpoint(
+      binding,
+      decision.validate,
+      decision.execute,
+    );
+  }
+
+  private async runCheckpoint<T>(
+    binding: object,
+    validate: (value: unknown) => T,
+    execute: () => Promise<unknown>,
+  ): Promise<T> {
     const key = workflowDigest(binding);
     const saved = await this.workflow.getReview(key);
-    if (saved !== null) return review.validate(saved);
-    const result = review.validate(await this.runner.run(review));
+    if (saved !== null) return validate(saved);
+    const result = validate(await execute());
     await this.assertSourceUnchanged();
     await this.workflow.saveReview(key, binding, result);
     return result;
