@@ -16,7 +16,14 @@ export interface JevChoiceAnswer {
   confidence: number;
 }
 
+export interface JevChoiceClientMetadata {
+  provider: "typesafe-system-one";
+  baseURL: string;
+  model: string;
+}
+
 export interface JevChoiceClient {
+  readonly metadata?: JevChoiceClientMetadata;
   choose(
     state: unknown,
     questions: Readonly<Record<string, JevChoiceQuestion>>,
@@ -114,14 +121,20 @@ export function createJevChoiceClient(
 ): JevChoiceClient | undefined {
   const apiKey = environmentEntry(environment, "TYPESAFE_API_KEY")?.trim();
   if (!apiKey) return undefined;
-  const baseURL =
+  const baseURL = (
     environmentEntry(environment, "TYPESAFE_BASE_URL")?.trim() ||
-    DEFAULT_JEV_BASE_URL;
+    DEFAULT_JEV_BASE_URL
+  ).replace(/\/+$/u, "");
   const model =
     environmentEntry(environment, "TYPESAFE_DEFAULT_MODEL")?.trim() ||
     DEFAULT_JEV_MODEL;
 
   return {
+    metadata: {
+      provider: "typesafe-system-one",
+      baseURL,
+      model,
+    },
     async choose(state, questions) {
       signal?.throwIfAborted();
       if (Object.keys(questions).length === 0) return {};
@@ -133,7 +146,7 @@ export function createJevChoiceClient(
           : AbortSignal.any([signal, timeoutSignal]);
       try {
         response = await fetchImpl(
-          `${baseURL.replace(/\/+$/u, "")}/v1/systemone`,
+          `${baseURL}/v1/systemone`,
           {
             method: "POST",
             headers: {
