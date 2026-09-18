@@ -1,3 +1,4 @@
+import { environmentEntry } from "../auth.js";
 import type { JsonObject } from "../config.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -46,7 +47,7 @@ export async function reviewSettingsDigest(
   return workflowDigest({
     configs,
     command: resolveCodexCommand(environment),
-    baseUrl: environment["OPENAI_BASE_URL"],
+    baseUrl: environmentEntry(environment, "OPENAI_BASE_URL")?.trim() || undefined,
   });
 }
 
