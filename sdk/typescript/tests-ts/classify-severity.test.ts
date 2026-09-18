@@ -193,6 +193,21 @@ test("Jev owns the severity choice and Codex only explains the selected decision
   expect(outputSchema.properties?.["level"]).toBeUndefined();
 });
 
+test("rejects a standard rubric label that contradicts the Jev level", async () => {
+  const rubricPath = await document("Assign MEDIUM to bounded metadata reads.");
+  const { codex } = fakeCodex({
+    findingId: finding.findingId,
+    rubricLabel: "HIGH",
+    rationale: "Synthetic contradictory explanation.",
+    confidence: "high",
+    reviewTrigger: null,
+  });
+  const { jev } = fakeJev("medium");
+  await expect(
+    classifySeverity([finding], { rubricPath, codex, jev }),
+  ).rejects.toThrow("invalid assessment");
+});
+
 test("Jev REVIEW and Jev failures fall back to the existing System-2 classifier", async () => {
   const rubricPath = await document("Apply the supplied policy.");
   for (const jev of [
