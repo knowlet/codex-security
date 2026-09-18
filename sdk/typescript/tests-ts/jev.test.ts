@@ -53,7 +53,7 @@ test("Jev client sends typed Choice questions to the System One endpoint", async
     },
   );
 
-  expect(answers.route).toEqual({
+  expect(answers["route"]).toEqual({
     choice: "review",
     probabilities: { fast: 0.1, review: 0.9 },
     confidence: 0.8,
@@ -81,31 +81,39 @@ test("Jev client sends typed Choice questions to the System One endpoint", async
   });
 });
 
-test("Jev client defaults to jev-latest and rejects answers outside the legal action set", async () => {
-  let model: string | undefined;
-  const client = createJevChoiceClient(
+async function choiceResponse(
+  answer: Record<string, unknown>,
+  onRequest?: (body: Record<string, unknown>) => void,
+) {
+  return createJevChoiceClient(
     { TYPESAFE_API_KEY: "synthetic-typesafe-key" },
     undefined,
     async (_input, init) => {
-      model = JSON.parse(String(init?.body)).model;
-      return new Response(
-        JSON.stringify({
-          model: DEFAULT_JEV_MODEL,
-          answers: {
-            route: {
-              type: "choice",
-              choice: "invented",
-              probabilities: { fast: 0.5, review: 0.5 },
-              confidence: 0,
-            },
-          },
-        }),
-        { status: 200 },
-      );
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      onRequest?.(body);
+      return Response.json({
+        model: DEFAULT_JEV_MODEL,
+        answers: { route: answer },
+      });
+    },
+  )!;
+}
+
+test("Jev client defaults to jev-latest and rejects answers outside the legal action set", async () => {
+  let model: unknown;
+  const client = await choiceResponse(
+    {
+      type: "choice",
+      choice: "invented",
+      probabilities: { fast: 0.5, review: 0.5 },
+      confidence: 0,
+    },
+    (body) => {
+      model = body["model"];
     },
   );
   await expect(
-    client!.choose("state", {
+    client.choose("state", {
       route: {
         instructions: "Choose a route.",
         criteria: { fast: "Fast path", review: "System-2" },
@@ -113,4 +121,72 @@ test("Jev client defaults to jev-latest and rejects answers outside the legal ac
     }),
   ).rejects.toThrow("invalid Choice answer");
   expect(model).toBe(DEFAULT_JEV_MODEL);
+});
+
+test.each([
+  [
+    "choice contradicts the maximum probability",
+    {
+      type: "choice",
+      choice: "review",
+      probabilities: { fast: 0.99, review: 0.01 },
+      confidence: 0.9,
+    },
+  ],
+  [
+    "probabilities sum to zero",
+    {
+      type: "choice",
+      choice: "fast",
+      probabilities: { fast: 0, review: 0 },
+      confidence: 0.9,
+    },
+  ],
+  [
+    "probabilities sum above one",
+    {
+      type: "choice",
+      choice: "fast",
+      probabilities: { fast: 1, review: 1 },
+      confidence: 0.9,
+    },
+  ],
+  [
+    "probabilities contain an extra label",
+    {
+      type: "choice",
+      choice: "fast",
+      probabilities: { fast: 0.5, review: 0.5, other: 0 },
+      confidence: 0.9,
+    },
+  ],
+] as const)("rejects inconsistent Choice response: %s", async (_name, answer) => {
+  const client = await choiceResponse(answer);
+  await expect(
+    client.choose("state", {
+      route: {
+        instructions: "Choose a route.",
+        criteria: { fast: "Fast path", review: "System-2" },
+      },
+    }),
+  ).rejects.toThrow("Jev returned");
+});
+
+test("accepts a tied maximum Choice distribution", async () => {
+  const client = await choiceResponse({
+    type: "choice",
+    choice: "review",
+    probabilities: { fast: 0.5, review: 0.5 },
+    confidence: 0.5,
+  });
+  expect(
+    (
+      await client.choose("state", {
+        route: {
+          instructions: "Choose a route.",
+          criteria: { fast: "Fast path", review: "System-2" },
+        },
+      })
+    )["route"]?.choice,
+  ).toBe("review");
 });
