@@ -104,7 +104,7 @@ function screening(
 test("Jev handles bounded dedupe screening without invoking Codex", async () => {
   const findings = [entry(1), entry(2), entry(3)];
   let codexCalls = 0;
-  let jevQuestions: Record<string, unknown> | undefined;
+  let jevQuestions: Readonly<Record<string, unknown>> | undefined;
   const reviewer = new CodexDeduplicationReviewer(
     {
       async run<T>(_review: CodexReview<T>): Promise<T> {
