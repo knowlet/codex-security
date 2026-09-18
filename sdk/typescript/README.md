@@ -2207,10 +2207,13 @@ resolving the refusal, run dedupe without that workflow ID or with a new one.
 
 Checkpoints bind to the exact original records and ordering, approved source path,
 Git revision and current file contents (including ignored files), repository scope,
-model and reasoning settings, Codex configuration and version, and prompt/contract version. Changed
-inputs cause a new review rather than reusing a decision. Source changes during
-review stop that attempt before group writes; restart with the same ID to review
-the changed source. Original findings, never prior rationales or merged findings,
+provider/model settings, decision input, and contract version. Jev screening
+checkpoints include the normalized TypeSafe base URL and model plus the complete
+System One questions/criteria; Codex checkpoints retain their existing model,
+reasoning, configuration, executable-version, prompt, and contract bindings.
+Changed inputs or provider settings cause a new review rather than reusing an
+incompatible decision. Source changes during review stop that attempt before
+group writes; restart with the same ID to review the changed source. Original findings, never prior rationales or merged findings,
 are supplied to later independent reviews. Source snapshots do not follow directory
 links outside the approved checkout.
 
@@ -2229,15 +2232,17 @@ use another workflow ID for a fresh review rather than changing that saved resul
    explicit all-repository scope. Use the complete stored anchor and
    candidates returned by that request. Fetch all neighborhoods before starting
    reviews so every pair's screening dependencies are known.
-2. Screen each nonempty neighborhood with `gpt-5.6-luna` at `xhigh` reasoning
-   effort. The review covers every anchor-neighbor pair; nominations between
-   neighbors are rejected.
-3. Independently review each nominated pair once with `gpt-5.6-sol` at `high`
-   reasoning effort after all Luna screenings covering that pair finish without
-   a `DISTINCT` decision. Luna and ready Sol jobs share the configured worker
+2. Screen each nonempty neighborhood with TypeSafe Jev when configured. Jev
+   returns `SAME`, `DISTINCT`, or `REVIEW`; `REVIEW` keeps the pair eligible
+   for source-grounded review. If Jev is unavailable or its response is invalid,
+   fall back to the existing `gpt-5.6-luna` `xhigh` screening. The screening
+   covers every anchor-neighbor pair; nominations between neighbors are rejected.
+3. Independently review each eligible pair once with `gpt-5.6-sol` at `high`
+   reasoning effort after all screenings covering that pair finish without a
+   `DISTINCT` decision. Screening and ready Sol jobs share the configured worker
    pool and can run together. Only accepted pairs contribute to duplicate groups.
-4. Group accepted duplicate pairs transitively unless a Luna or Sol `DISTINCT`
-   decision contradicts the resulting component. Contradicted components are
+4. Group accepted duplicate pairs transitively unless a screening or Sol
+   `DISTINCT` decision contradicts the resulting component. Contradicted components are
    split deterministically, preferring legal subgroups that preserve more
    accepted-pair support. There is no additional whole-group review.
 5. Post all accepted groups to `/v1/dedupe-groups`. Return a completed result
