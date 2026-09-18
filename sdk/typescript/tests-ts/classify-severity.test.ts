@@ -78,6 +78,11 @@ function fakeJev(
     questions: Readonly<Record<string, unknown>>;
   }> = [];
   const jev: NonNullable<ClassifySeverityOptions["jev"]> = {
+    metadata: {
+      provider: "typesafe-system-one",
+      baseURL: "https://typesafe.example",
+      model: "jev-test",
+    },
     async choose(state, questions) {
       calls.push({ state, questions });
       return {
@@ -223,6 +228,11 @@ test("Jev REVIEW and Jev failures fall back to the existing System-2 classifier"
   for (const jev of [
     fakeJev("review").jev,
     {
+      metadata: {
+        provider: "typesafe-system-one",
+        baseURL: "https://typesafe.example",
+        model: "jev-test",
+      },
       async choose() {
         throw new Error("synthetic Jev outage");
       },
