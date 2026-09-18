@@ -334,7 +334,23 @@ export async function classifySeverityInternal(
         reviewTrigger: finding.severity?.changeConditions?.trim() || null,
       };
     } else {
-      const response = await runReadOnlyCodex(
+      const jevDecision = await tryJevSeverityDecision(
+        finding,
+        rubric,
+        knowledge,
+        options,
+      );
+      if (jevDecision !== null) {
+        decision = await explainJevSeverityDecision(
+          finding,
+          rubric,
+          knowledge,
+          jevDecision,
+          options,
+          surface,
+        );
+      } else {
+        const response = await runReadOnlyCodex(
         [
           "Classify the supplied security report using the supplied rubric as the classification policy.",
           "Use only this report and explicitly supplied knowledge-base evidence. Do not use tools, inspect source, follow links, or perform new validation.",
@@ -371,6 +387,7 @@ export async function classifySeverityInternal(
           "Severity classification returned an invalid assessment.",
           { cause: error },
         );
+      }
       }
     }
     const assessment: SeverityAssessment = {
