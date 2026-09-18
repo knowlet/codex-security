@@ -69,6 +69,23 @@ function fakeCodex(response: unknown) {
   return { codex, calls };
 }
 
+function fakeJev(choice: string) {
+  const calls: Array<{ state: unknown; questions: Record<string, unknown> }> = [];
+  const jev: NonNullable<ClassifySeverityOptions["jev"]> = {
+    async choose(state, questions) {
+      calls.push({ state, questions });
+      return {
+        severity: {
+          choice,
+          probabilities: { [choice]: 1 },
+          confidence: 1,
+        },
+      };
+    },
+  };
+  return { jev, calls };
+}
+
 test("without a rubric reuses severity without authentication or a model call", async () => {
   const { codex, calls } = fakeCodex("must not run");
   const original = structuredClone(finding);
@@ -130,6 +147,80 @@ test("supplies complete evidence and separate policy/context to a restricted str
     additionalProperties: false,
   });
   expect(finding.severity!.level).toBe("high");
+});
+
+test("Jev owns the severity choice and Codex only explains the selected decision", async () => {
+  const rubricPath = await document(
+    "Assign MEDIUM to bounded unauthorized metadata reads.",
+  );
+  const explanation = {
+    findingId: finding.findingId,
+    rubricLabel: "MEDIUM",
+    rationale:
+      "The demonstrated read crosses a boundary but exposes only bounded metadata.",
+    confidence: "high",
+    reviewTrigger: "Protected content in the response would increase severity.",
+  };
+  const { codex, calls: codexCalls } = fakeCodex(explanation);
+  const { jev, calls: jevCalls } = fakeJev("medium");
+  const result = await classifySeverity([finding], {
+    rubricPath,
+    codex,
+    jev,
+  });
+
+  expect(result.assessments[0]).toMatchObject({
+    ...assessed,
+    source: "rubric",
+  });
+  expect(jevCalls).toHaveLength(1);
+  const jevQuestion = (
+    jevCalls[0]!.questions["severity"] as {
+      instructions: { finding: Record<string, unknown> };
+    }
+  ).instructions;
+  expect(jevQuestion.finding["severity"]).toBeUndefined();
+  expect(jevQuestion.finding["priority"]).toBeUndefined();
+  expect(codexCalls).toHaveLength(1);
+  expect(codexCalls[0]!.prompt).toContain(
+    "Jev has already made the severity decision",
+  );
+  expect(codexCalls[0]!.prompt).toContain('"level":"medium"');
+  const outputSchema = codexCalls[0]!.turn.outputSchema as {
+    properties?: Record<string, unknown>;
+  };
+  expect(outputSchema.properties?.["decision"]).toBeUndefined();
+  expect(outputSchema.properties?.["level"]).toBeUndefined();
+});
+
+test("Jev REVIEW and Jev failures fall back to the existing System-2 classifier", async () => {
+  const rubricPath = await document("Apply the supplied policy.");
+  for (const jev of [
+    fakeJev("review").jev,
+    {
+      async choose() {
+        throw new Error("synthetic Jev outage");
+      },
+    },
+  ] satisfies NonNullable<ClassifySeverityOptions["jev"]>[]) {
+    const { codex, calls } = fakeCodex(assessed);
+    const result = await classifySeverity([finding], {
+      rubricPath,
+      codex,
+      jev,
+    });
+    expect(result.assessments[0]).toMatchObject({
+      ...assessed,
+      source: "rubric",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.prompt).toContain(
+      "Classify the supplied security report using the supplied rubric",
+    );
+    expect(calls[0]!.prompt).not.toContain(
+      "Jev has already made the severity decision",
+    );
+  }
 });
 
 test("represents policy exclusions independently from Low", async () => {
