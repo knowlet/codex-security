@@ -101,6 +101,71 @@ function screening(
   };
 }
 
+test("Jev handles bounded dedupe screening without invoking Codex", async () => {
+  const findings = [entry(1), entry(2), entry(3)];
+  let codexCalls = 0;
+  let jevQuestions: Record<string, unknown> | undefined;
+  const reviewer = new CodexDeduplicationReviewer(
+    {
+      async run<T>(_review: CodexReview<T>): Promise<T> {
+        codexCalls++;
+        throw new Error("Codex screening should not run");
+      },
+    },
+    {
+      async choose(_state, questions) {
+        jevQuestions = questions;
+        return {
+          "pair-1": {
+            choice: "REVIEW",
+            probabilities: { SAME: 0.2, DISTINCT: 0.2, REVIEW: 0.6 },
+            confidence: 0.4,
+          },
+          "pair-2": {
+            choice: "DISTINCT",
+            probabilities: { SAME: 0.05, DISTINCT: 0.9, REVIEW: 0.05 },
+            confidence: 0.85,
+          },
+        };
+      },
+    },
+  );
+  const result = await reviewer.screen(findings);
+  expect(codexCalls).toBe(0);
+  expect(Object.keys(jevQuestions ?? {})).toEqual(["pair-1", "pair-2"]);
+  expect(result.decisions["pair-1"]!.decision).toBe("REVIEW");
+  expect(result.decisions["pair-2"]!.decision).toBe("DISTINCT");
+  expect(result.decisions["pair-1"]!.rationale).toContain("Jev screening");
+});
+
+test("REVIEW screening candidates continue to source-grounded pair review", async () => {
+  const findings = [entry(1), entry(2)];
+  let pairReviews = 0;
+  const result = await new FindingDeduplicator(
+    candidates(findings),
+    {
+      async screen() {
+        return {
+          decisions: {
+            "pair-1": {
+              decision: "REVIEW",
+              rationale: "Source-grounded review is required.",
+            },
+          },
+        };
+      },
+      async reviewPair(assigned) {
+        pairReviews++;
+        return same(assigned);
+      },
+    },
+  ).run([findings[0]!.findingId]);
+  expect(pairReviews).toBe(1);
+  expect(result.duplicateGroups).toEqual([
+    [findings[0]!.findingId, findings[1]!.findingId],
+  ]);
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
