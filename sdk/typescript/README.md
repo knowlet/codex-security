@@ -930,6 +930,12 @@ restrictions.
 | `CI`                                                                        | Disables interactive update notices.                                                                      |
 | `NO_COLOR`, `TERM`                                                          | Disables colored scan history when `NO_COLOR` is defined or `TERM=dumb`.                                  |
 
+Setting `TYPESAFE_API_KEY` opts these decision inputs into the configured
+TypeSafe endpoint: dedupe screening sends the participating finding records,
+and rubric severity sends the report plus the supplied rubric and knowledge-base
+context. Leave the key unset to keep those stages on the existing Codex paths
+without TypeSafe data egress.
+
 Custom Codex executables need thread source attribution for `exec` and
 `app-server` (Codex 0.149.1+). On Windows, use a native `.exe` or `.com`;
 command shims such as `codex.cmd` fall back to the bundled executable.
