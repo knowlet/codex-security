@@ -92,7 +92,6 @@ export class CheckpointedReviewRunner {
       source: this.source,
       scope: this.scope,
       stage: review.stage,
-      provider: "codex",
       model: review.model,
       effort: review.effort,
       settingsDigest: this.settingsDigest,
