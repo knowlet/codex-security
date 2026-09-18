@@ -1,7 +1,7 @@
 import { z } from "incur";
 import { readFileSync } from "node:fs";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
-import type { JevChoiceClient } from "../jev.js";
+import type { JevChoiceClient, JevChoiceQuestion } from "../jev.js";
 import type { Finding } from "../models.js";
 import type { CodexReviewRunner } from "./codex-review.js";
 import type { DecisionCheckpointRunner } from "./checkpointed-review.js";
@@ -170,11 +170,11 @@ type DeduplicationReviewRunner = Pick<CodexReviewRunner, "run"> &
 
 interface JevScreeningRequest {
   state: unknown;
-  questions: Readonly<Record<string, { instructions: unknown; criteria: unknown }>>;
+  questions: Readonly<Record<string, JevChoiceQuestion>>;
 }
 
 class JevScreeningFallbackError extends Error {
-  constructor(public readonly cause: unknown) {
+  constructor(public readonly originalError: unknown) {
     super("Jev screening failed.");
   }
 }
@@ -243,17 +243,18 @@ export class CodexDeduplicationReviewer implements DeduplicationReviewer {
 
   async screen(findings: readonly Finding[]): Promise<ScreeningResult> {
     if (this.jev !== undefined) {
+      const jev = this.jev;
       const request = jevScreeningRequest(findings);
       const execute = async (): Promise<ScreeningResult> => {
         try {
-          return await screenWithJev(this.jev!, findings, request);
+          return await screenWithJev(jev, findings, request);
         } catch (error) {
           throw new JevScreeningFallbackError(error);
         }
       };
       try {
         if (this.runner.runDecision !== undefined) {
-          const metadata = this.jev.metadata ?? {
+          const metadata = jev.metadata ?? {
             provider: "typesafe-system-one" as const,
             baseURL: "unknown",
             model: "unknown",
