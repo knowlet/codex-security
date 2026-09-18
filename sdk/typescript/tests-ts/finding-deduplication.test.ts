@@ -30,6 +30,7 @@ import {
 } from "../src/deduplication/scan.js";
 import { PLUGIN_ROOT } from "./plugin-root.js";
 import type { JsonObject } from "../src/config.js";
+import type { JevChoiceClient } from "../src/jev.js";
 import { checkpointWorkbench } from "./support/workbench-fakes.js";
 
 const document: FindingsDocument = JSON.parse(
@@ -212,16 +213,13 @@ test("workflow resume reuses Jev screening and completed pair checkpoints", asyn
     "synthetic-codex-settings",
   );
   let jevCalls = 0;
-  const jev = {
+  const jev: JevChoiceClient = {
     metadata: {
       provider: "typesafe-system-one" as const,
       baseURL: "https://typesafe.example",
       model: "jev-test",
     },
-    async choose(
-      _state: unknown,
-      questions: Readonly<Record<string, { criteria: Readonly<Record<string, unknown>> }>>,
-    ) {
+    async choose(_state, questions) {
       jevCalls++;
       return Object.fromEntries(
         Object.keys(questions).map((slot) => [
@@ -271,9 +269,9 @@ test("workflow resume reuses Jev screening and completed pair checkpoints", asyn
     stage: "screening",
     effort: "system-one",
   });
-  expect(bindings[0]?.["settingsDigest"]).toBeString();
-  expect(bindings[0]?.["promptDigest"]).toBeString();
-  expect(bindings[0]?.["contractDigest"]).toBeString();
+  expect(typeof bindings[0]?.["settingsDigest"]).toBe("string");
+  expect(typeof bindings[0]?.["promptDigest"]).toBe("string");
+  expect(typeof bindings[0]?.["contractDigest"]).toBe("string");
 });
 
 function deferred<T>() {
