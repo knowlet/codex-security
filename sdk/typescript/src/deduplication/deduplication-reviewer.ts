@@ -254,11 +254,7 @@ export class CodexDeduplicationReviewer implements DeduplicationReviewer {
       };
       try {
         if (this.runner.runDecision !== undefined) {
-          const metadata = jev.metadata ?? {
-            provider: "typesafe-system-one" as const,
-            baseURL: "unknown",
-            model: "unknown",
-          };
+          const metadata = jev.metadata;
           return await this.runner.runDecision({
             contractVersion: JEV_SCREENING_CHECKPOINT_VERSION,
             stage: "screening",
