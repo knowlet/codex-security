@@ -25,6 +25,8 @@ export interface JevChoiceClient {
 
 type JevFetch = typeof globalThis.fetch;
 
+const PROBABILITY_EPSILON = 1e-6;
+
 function requiredChoiceAnswer(
   value: unknown,
   labels: ReadonlySet<string>,
@@ -46,11 +48,24 @@ function requiredChoiceAnswer(
   ) {
     throw new CodexSecurityError("Jev returned an invalid Choice answer.");
   }
+  const rawProbabilities = answer["probabilities"] as Record<
+    string,
+    unknown
+  >;
+  const probabilityLabels = Object.keys(rawProbabilities);
+  if (
+    probabilityLabels.length !== labels.size ||
+    probabilityLabels.some((label) => !labels.has(label))
+  ) {
+    throw new CodexSecurityError(
+      "Jev returned Choice probabilities for an invalid action set.",
+    );
+  }
   const probabilities: Record<string, number> = {};
+  let total = 0;
+  let maximum = -Infinity;
   for (const label of labels) {
-    const probability = (answer["probabilities"] as Record<string, unknown>)[
-      label
-    ];
+    const probability = rawProbabilities[label];
     if (
       typeof probability !== "number" ||
       !Number.isFinite(probability) ||
@@ -60,6 +75,21 @@ function requiredChoiceAnswer(
       throw new CodexSecurityError("Jev returned invalid Choice probabilities.");
     }
     probabilities[label] = probability;
+    total += probability;
+    maximum = Math.max(maximum, probability);
+  }
+  if (Math.abs(total - 1) > PROBABILITY_EPSILON) {
+    throw new CodexSecurityError(
+      "Jev returned Choice probabilities that do not sum to one.",
+    );
+  }
+  if (
+    probabilities[answer["choice"]]! + PROBABILITY_EPSILON <
+    maximum
+  ) {
+    throw new CodexSecurityError(
+      "Jev returned a Choice that is not a maximum-probability action.",
+    );
   }
   return {
     choice: answer["choice"],
