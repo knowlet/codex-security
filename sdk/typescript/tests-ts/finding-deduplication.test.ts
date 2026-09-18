@@ -5,6 +5,7 @@ import { expect, test } from "bun:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { Finding, FindingsDocument } from "../src/models.js";
 import type { CodexReview } from "../src/deduplication/codex-review.js";
+import { CheckpointedReviewRunner } from "../src/deduplication/checkpointed-review.js";
 import {
   contradictionFreeSubgroups,
   FindingDeduplicator,
@@ -21,6 +22,7 @@ import {
 } from "../src/deduplication/deduplication-reviewer.js";
 import { CodexSecurityError, DeduplicationReviewError } from "../src/errors.js";
 import { FindingsClient } from "../src/findings-client.js";
+import { FindingWorkflow } from "../src/finding-workflow.js";
 import { deduplicateScanDirectory } from "../src/index.js";
 import {
   deduplicateScanDirectoryInternal,
@@ -28,6 +30,7 @@ import {
 } from "../src/deduplication/scan.js";
 import { PLUGIN_ROOT } from "./plugin-root.js";
 import type { JsonObject } from "../src/config.js";
+import { checkpointWorkbench } from "./support/workbench-fakes.js";
 
 const document: FindingsDocument = JSON.parse(
   await readFile(
@@ -164,6 +167,113 @@ test("REVIEW screening candidates continue to source-grounded pair review", asyn
   expect(result.duplicateGroups).toEqual([
     [findings[0]!.findingId, findings[1]!.findingId],
   ]);
+});
+
+test("workflow resume reuses Jev screening and completed pair checkpoints", async () => {
+  const findings = [entry(1), entry(2), entry(3)];
+  const ids = findings.map((finding) => finding.findingId);
+  const pairAB = pairKey(ids.slice(0, 2));
+  const pairAC = pairKey([ids[0]!, ids[2]!]);
+  const source: JsonObject = {
+    repository: "/synthetic/repository",
+    revision: "synthetic-revision",
+    refsDigest: "synthetic-refs",
+    content: "synthetic-content",
+  };
+  const workbench = checkpointWorkbench("jev-resume", source);
+  const workflow = new FindingWorkflow(
+    "jev-resume",
+    process.env,
+    workbench.run,
+  );
+  let failAC = true;
+  const pairCalls: string[] = [];
+  const rawRunner = {
+    async run<T>(review: CodexReview<T>): Promise<T> {
+      if (review.stage !== "pair-review") {
+        throw new Error("Jev screening should not fall back to Codex.");
+      }
+      const assigned = findings.filter((finding) =>
+        review.prompt.includes(finding.findingId),
+      );
+      const key = pairKey(assigned.map((finding) => finding.findingId));
+      pairCalls.push(key);
+      if (key === pairAC && failAC) {
+        throw new CodexSecurityError("Synthetic A/C pair review failure.");
+      }
+      return review.validate(same(assigned));
+    },
+  };
+  const checkpoints = new CheckpointedReviewRunner(
+    workflow,
+    rawRunner,
+    source,
+    { allRepositories: true },
+    "synthetic-codex-settings",
+  );
+  let jevCalls = 0;
+  const jev = {
+    metadata: {
+      provider: "typesafe-system-one" as const,
+      baseURL: "https://typesafe.example",
+      model: "jev-test",
+    },
+    async choose(
+      _state: unknown,
+      questions: Readonly<Record<string, { criteria: Readonly<Record<string, unknown>> }>>,
+    ) {
+      jevCalls++;
+      return Object.fromEntries(
+        Object.keys(questions).map((slot) => [
+          slot,
+          {
+            choice: jevCalls === 1 ? "SAME" : "DISTINCT",
+            probabilities:
+              jevCalls === 1
+                ? { SAME: 1, DISTINCT: 0, REVIEW: 0 }
+                : { SAME: 0, DISTINCT: 1, REVIEW: 0 },
+            confidence: 1,
+          },
+        ]),
+      );
+    },
+  };
+  const reviewer = new CodexDeduplicationReviewer(checkpoints, jev);
+  const deduplicator = new FindingDeduplicator(
+    candidates(findings),
+    reviewer,
+    undefined,
+    1,
+  );
+
+  await expect(deduplicator.run([ids[0]!])).rejects.toThrow(
+    "Synthetic A/C pair review failure.",
+  );
+  expect(jevCalls).toBe(1);
+  expect(pairCalls).toEqual([pairAB, pairAC]);
+
+  failAC = false;
+  const result = await deduplicator.run([ids[0]!]);
+  expect(jevCalls).toBe(1);
+  expect(pairCalls).toEqual([pairAB, pairAC, pairAC]);
+  expect(result).toMatchObject({
+    uniqueFindingIds: [ids[0]],
+    duplicateGroups: [[ids[0], ids[1], ids[2]]],
+    deduplicationStatus: "completed",
+  });
+
+  const bindings = workbench.saved.map(
+    (saved) => saved["binding"] as JsonObject,
+  );
+  expect(bindings[0]).toMatchObject({
+    provider: "typesafe-system-one",
+    model: "jev-test",
+    stage: "screening",
+    effort: "system-one",
+  });
+  expect(bindings[0]?.["settingsDigest"]).toBeString();
+  expect(bindings[0]?.["promptDigest"]).toBeString();
+  expect(bindings[0]?.["contractDigest"]).toBeString();
 });
 
 function deferred<T>() {
