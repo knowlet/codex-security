@@ -35,6 +35,10 @@ const screeningReviewSchema = z.object({
   decision: z.literal("REVIEW"),
   rationale,
 });
+const codexScreeningDecisionSchema = z.discriminatedUnion("decision", [
+  screeningSameSchema.strict(),
+  screeningDistinctSchema.strict(),
+]);
 const screeningDecisionSchema = z.discriminatedUnion("decision", [
   screeningSameSchema.strict(),
   screeningDistinctSchema.strict(),
@@ -126,7 +130,7 @@ export function validateScreening(
 }
 
 function screeningToolSchema(neighborCount: number): object {
-  const decisionSchema = z.toJSONSchema(screeningDecisionSchema, {
+  const decisionSchema = z.toJSONSchema(codexScreeningDecisionSchema, {
     target: "openapi-3.0",
   });
   const slots = Array.from({ length: neighborCount }, (_value, index) =>
@@ -163,7 +167,9 @@ async function screenWithJev(
   findings: readonly Finding[],
 ): Promise<ScreeningResult> {
   const anchor = findings[0];
-  if (anchor === undefined) return validateScreening({ decisions: {} }, findings);
+  if (anchor === undefined) {
+    return validateScreening({ decisions: {} }, findings);
+  }
   const questions = Object.fromEntries(
     findings.slice(1).map((candidate, index) => [
       screeningPairSlot(index),
