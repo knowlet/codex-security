@@ -177,6 +177,27 @@ async function tryJevSeverityDecision(
   return level.success ? { decision: "assessed", level: level.data } : null;
 }
 
+function conventionalRubricLevel(
+  rubricLabel: string,
+): SeverityLevel | null {
+  switch (rubricLabel.trim().toLowerCase()) {
+    case "critical":
+    case "urgent":
+      return "critical";
+    case "high":
+      return "high";
+    case "medium":
+    case "moderate":
+      return "medium";
+    case "low":
+      return "low";
+    case "informational":
+      return "informational";
+    default:
+      return null;
+  }
+}
+
 async function explainJevSeverityDecision(
   finding: SeverityClassificationFinding,
   rubric: string[],
@@ -212,10 +233,16 @@ async function explainJevSeverityDecision(
   options.signal?.throwIfAborted();
   try {
     const explanation = explanationSchema.parse(JSON.parse(response));
+    const normalizedRubricLevel =
+      explanation.rubricLabel === null
+        ? null
+        : conventionalRubricLevel(explanation.rubricLabel);
     if (
       explanation.findingId !== finding.findingId ||
       (selected.decision === "assessed"
-        ? explanation.rubricLabel === null
+        ? explanation.rubricLabel === null ||
+          (normalizedRubricLevel !== null &&
+            normalizedRubricLevel !== selected.level)
         : explanation.rubricLabel !== null)
     ) {
       throw new Error(
