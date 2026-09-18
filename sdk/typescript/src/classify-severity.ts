@@ -244,7 +244,7 @@ async function explainJevSeverityDecision(
       "Use only the supplied report, rubric, and knowledge-base evidence. Do not use tools, inspect source, follow links, or perform new validation.",
       "Explain the selected decision. Preserve the rubric's corresponding original label in rubricLabel for assessed findings; use null for an excluded finding.",
       "Return a concise rationale and the specific missing fact that would change the selected classification (reviewTrigger, or null).",
-      "The output schema intentionally omits decision and level. Return only the requested explanation object and preserve findingId exactly.",
+      "The output schema intentionally omits decision, level, and confidence. Return only the requested explanation object and preserve findingId exactly.",
       JSON.stringify({
         selectedDecision: selected,
         rubric,
