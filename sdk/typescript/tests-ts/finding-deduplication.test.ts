@@ -1100,6 +1100,17 @@ test("keeps recommendation-only screening independent from complete pair reviews
         expect(validateSchema({ decisions: decisionsWithFindingIds })).toBe(
           false,
         );
+        const reviewDecision = {
+          ...result,
+          decisions: {
+            ...result.decisions,
+            "pair-1": {
+              decision: "REVIEW",
+              rationale: "Escalate to System-2.",
+            },
+          },
+        };
+        expect(validateSchema(reviewDecision)).toBe(false);
         for (const field of ["canonicalFindingId", "mergedFinding"] as const) {
           const invalid = {
             decisions: Object.fromEntries(
