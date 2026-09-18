@@ -1314,10 +1314,11 @@ the same UTF-8 text, PDF, DOCX, and directory inputs as scan knowledge bases.
 When `TYPESAFE_API_KEY` is set, rubric classification sends only the supplied
 rubric, context, and report to TypeSafe Jev for the bounded
 `excluded | critical | high | medium | low | informational | review` decision.
-Jev does not generate the assessment text: for a concrete Jev severity, a
-separate read-only Codex turn can only supply `rubricLabel`, `rationale`,
-`confidence`, and `reviewTrigger`; its output schema cannot change the selected
-decision or level. A Jev `review` choice, transport/schema failure, or missing
+Jev does not generate the assessment text: for a concrete Jev severity, the
+same Jev request also selects the qualitative confidence band, while a separate
+read-only Codex turn can only supply `rubricLabel`, `rationale`, and
+`reviewTrigger`; its output schema cannot change the selected decision, level,
+or confidence. A Jev `review` choice, transport/schema failure, or missing
 TypeSafe key falls back to the previous full Codex classification. No source
 inspection, tools, or new validation are allowed in either path. `--model` and
 `--effort` select the Codex explanation/System-2 fallback model and reasoning
@@ -1331,8 +1332,9 @@ The result contains one assessment per selected finding:
 - `rubricLabel`: the policy's original label, such as `URGENT`, normalized to
   `critical`; null for inherited severity or exclusions.
 - `rationale`, separate `confidence`, and `reviewTrigger` describing a missing
-  fact that would change the classification. Inherited severity has no new
-  classification-confidence judgment.
+  fact that would change the classification. With Jev enabled, the confidence
+  band is a Jev decision rather than generated explanation text. Inherited
+  severity has no new classification-confidence judgment.
 - `findingId`, `occurrenceId`, and `inputSha256` binding the assessment to the
   report. Top-level metadata includes `assessedAt`, `rubricSha256`, and
   `knowledgeBaseSha256` for the supplied policy and context snapshots.
