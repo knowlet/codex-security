@@ -47,7 +47,7 @@ export async function reviewSettingsDigest(
   return workflowDigest({
     configs,
     command: resolveCodexCommand(environment),
-    baseUrl: environmentEntry(environment, "OPENAI_BASE_URL")?.trim() || undefined,
+    baseUrl:\n      environmentEntry(environment, "OPENAI_BASE_URL")?.trim() || undefined,
   });
 }
 
