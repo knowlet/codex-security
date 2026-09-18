@@ -911,6 +911,9 @@ restrictions.
 | Variable                                                                    | Effect                                                                                                    |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`, `CODEX_API_KEY`                                           | Scan credentials; `OPENAI_API_KEY` wins if both are set.                                                  |
+| `TYPESAFE_API_KEY`                                                         | Enables TypeSafe Jev for bounded dedupe and rubric-severity decisions.                                    |
+| `TYPESAFE_BASE_URL`                                                        | Optional TypeSafe API root; defaults to `https://api.typesafe.ai`.                                       |
+| `TYPESAFE_DEFAULT_MODEL`                                                   | Optional Jev model override; defaults to `jev-latest`.                                                   |
 | `CODEX_SECURITY_EMBEDDINGS_URL`                                             | Findings service endpoint; see [Embeddings and storage](#embeddings-and-storage).                         |
 | `CODEX_SECURITY_LINEAR_TEAM`, `CODEX_SECURITY_LINEAR_PROJECT`               | Default team and project for completed-scan publication.                                                  |
 | `CODEX_SECURITY_LINEAR_API_KEY`                                             | Personal API key for Linear patching and direct publication.                                              |
