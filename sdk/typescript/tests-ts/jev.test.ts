@@ -1,0 +1,116 @@
+import { expect, test } from "bun:test";
+import {
+  createJevChoiceClient,
+  DEFAULT_JEV_MODEL,
+} from "../src/jev.js";
+
+test("Jev client is disabled without TypeSafe credentials", () => {
+  expect(createJevChoiceClient({})).toBeUndefined();
+});
+
+test("Jev client sends typed Choice questions to the System One endpoint", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  const client = createJevChoiceClient(
+    {
+      TYPESAFE_API_KEY: "synthetic-typesafe-key",
+      TYPESAFE_BASE_URL: "https://typesafe.example/",
+      TYPESAFE_DEFAULT_MODEL: "jev-test",
+    },
+    undefined,
+    async (input, init) => {
+      requests.push({ url: String(input), init });
+      return new Response(
+        JSON.stringify({
+          model: "jev-test",
+          answers: {
+            route: {
+              type: "choice",
+              choice: "review",
+              probabilities: { fast: 0.1, review: 0.9 },
+              confidence: 0.8,
+            },
+          },
+          usage: { input_tokens: 10, output_tokens: 4 },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    },
+  );
+  expect(client).toBeDefined();
+  const answers = await client!.choose(
+    { finding: "example" },
+    {
+      route: {
+        instructions: "Choose the next review path.",
+        criteria: {
+          fast: "Use the bounded fast path.",
+          review: "Escalate to System-2 review.",
+        },
+      },
+    },
+  );
+
+  expect(answers.route).toEqual({
+    choice: "review",
+    probabilities: { fast: 0.1, review: 0.9 },
+    confidence: 0.8,
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.url).toBe("https://typesafe.example/v1/systemone");
+  expect(requests[0]!.init?.headers).toMatchObject({
+    Authorization: "Bearer synthetic-typesafe-key",
+    "Content-Type": "application/json",
+  });
+  const body = JSON.parse(String(requests[0]!.init?.body));
+  expect(body).toEqual({
+    state: { finding: "example" },
+    model: "jev-test",
+    questions: {
+      route: {
+        type: "choice",
+        instructions: "Choose the next review path.",
+        criteria: {
+          fast: "Use the bounded fast path.",
+          review: "Escalate to System-2 review.",
+        },
+      },
+    },
+  });
+});
+
+test("Jev client defaults to jev-latest and rejects answers outside the legal action set", async () => {
+  let model: string | undefined;
+  const client = createJevChoiceClient(
+    { TYPESAFE_API_KEY: "synthetic-typesafe-key" },
+    undefined,
+    async (_input, init) => {
+      model = JSON.parse(String(init?.body)).model;
+      return new Response(
+        JSON.stringify({
+          model: DEFAULT_JEV_MODEL,
+          answers: {
+            route: {
+              type: "choice",
+              choice: "invented",
+              probabilities: { fast: 0.5, review: 0.5 },
+              confidence: 0,
+            },
+          },
+        }),
+        { status: 200 },
+      );
+    },
+  );
+  await expect(
+    client!.choose("state", {
+      route: {
+        instructions: "Choose a route.",
+        criteria: { fast: "Fast path", review: "System-2" },
+      },
+    }),
+  ).rejects.toThrow("invalid Choice answer");
+  expect(model).toBe(DEFAULT_JEV_MODEL);
+});
