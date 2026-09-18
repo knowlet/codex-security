@@ -23,7 +23,7 @@ export interface JevChoiceClientMetadata {
 }
 
 export interface JevChoiceClient {
-  readonly metadata?: JevChoiceClientMetadata;
+  readonly metadata: JevChoiceClientMetadata;
   choose(
     state: unknown,
     questions: Readonly<Record<string, JevChoiceQuestion>>,
