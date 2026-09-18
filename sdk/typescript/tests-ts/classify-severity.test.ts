@@ -69,7 +69,10 @@ function fakeCodex(response: unknown) {
   return { codex, calls };
 }
 
-function fakeJev(choice: string) {
+function fakeJev(
+  choice: string,
+  confidenceBand: "high" | "medium" | "low" = "high",
+) {
   const calls: Array<{
     state: unknown;
     questions: Readonly<Record<string, unknown>>;
@@ -81,6 +84,11 @@ function fakeJev(choice: string) {
         severity: {
           choice,
           probabilities: { [choice]: 1 },
+          confidence: 1,
+        },
+        confidence: {
+          choice: confidenceBand,
+          probabilities: { [confidenceBand]: 1 },
           confidence: 1,
         },
       };
@@ -161,7 +169,6 @@ test("Jev owns the severity choice and Codex only explains the selected decision
     rubricLabel: "MEDIUM",
     rationale:
       "The demonstrated read crosses a boundary but exposes only bounded metadata.",
-    confidence: "high",
     reviewTrigger: "Protected content in the response would increase severity.",
   };
   const { codex, calls: codexCalls } = fakeCodex(explanation);
@@ -177,13 +184,12 @@ test("Jev owns the severity choice and Codex only explains the selected decision
     source: "rubric",
   });
   expect(jevCalls).toHaveLength(1);
-  const jevQuestion = (
-    jevCalls[0]!.questions["severity"] as {
-      instructions: { finding: Record<string, unknown> };
-    }
-  ).instructions;
-  expect(jevQuestion.finding["severity"]).toBeUndefined();
-  expect(jevQuestion.finding["priority"]).toBeUndefined();
+  const jevState = jevCalls[0]!.state as {
+    finding: Record<string, unknown>;
+  };
+  expect(jevState.finding["severity"]).toBeUndefined();
+  expect(jevState.finding["priority"]).toBeUndefined();
+  expect(jevCalls[0]!.questions["confidence"]).toBeDefined();
   expect(codexCalls).toHaveLength(1);
   expect(codexCalls[0]!.prompt).toContain(
     "Jev has already made the severity decision",
@@ -194,6 +200,7 @@ test("Jev owns the severity choice and Codex only explains the selected decision
   };
   expect(outputSchema.properties?.["decision"]).toBeUndefined();
   expect(outputSchema.properties?.["level"]).toBeUndefined();
+  expect(outputSchema.properties?.["confidence"]).toBeUndefined();
 });
 
 test("rejects a standard rubric label that contradicts the Jev level", async () => {
@@ -202,7 +209,6 @@ test("rejects a standard rubric label that contradicts the Jev level", async () 
     findingId: finding.findingId,
     rubricLabel: "HIGH",
     rationale: "Synthetic contradictory explanation.",
-    confidence: "high",
     reviewTrigger: null,
   });
   const { jev } = fakeJev("medium");
