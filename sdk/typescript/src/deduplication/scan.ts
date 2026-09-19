@@ -248,7 +248,6 @@ async function deduplicateResolvedScan(
         new CodexDeduplicationReviewer(
           checkpoints ?? runner,
           createJevChoiceClient(environment, options.signal),
-          options.signal,
         ),
       options.signal,
       options.concurrency,
