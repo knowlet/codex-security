@@ -2685,10 +2685,15 @@ export class CodexSecurity {
         sdkEnvironment,
       );
     }
+    const openAiBaseUrl = environmentValue(
+      environment,
+      "OPENAI_BASE_URL",
+    )?.trim();
     const codex = this.#dependencies.createCodex({
       ...(codexPathOverride === undefined
         ? {}
         : { codexPathOverride: executablePathForSpawn(codexPathOverride) }),
+      ...(openAiBaseUrl === undefined ? {} : { baseUrl: openAiBaseUrl }),
       ...(externalProvider !== null || apiKey === null ? {} : { apiKey }),
       ...(commandAuth || configOverrides.length > 0
         ? {
