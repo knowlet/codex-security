@@ -4,6 +4,8 @@ import { CodexSecurityError } from "./errors.js";
 export const DEFAULT_JEV_MODEL = "jev-latest";
 const DEFAULT_JEV_BASE_URL = "https://api.typesafe.ai";
 const JEV_REQUEST_TIMEOUT_MS = 10_000;
+const JEV_MAX_ATTEMPTS = 3;
+const JEV_RETRY_BASE_DELAY_MS = 250;
 
 export interface JevChoiceQuestion {
   instructions: unknown;
@@ -32,7 +34,38 @@ export interface JevChoiceClient {
 
 type JevFetch = typeof globalThis.fetch;
 
+interface JevRetryOptions {
+  wait?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+}
+
 const PROBABILITY_EPSILON = 1e-6;
+
+function retryableJevStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function jevRetryDelay(attempt: number): number {
+  return JEV_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+}
+
+async function waitForJevRetry(
+  delayMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  signal?.throwIfAborted();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+  signal?.throwIfAborted();
+}
 
 function requiredChoiceAnswer(
   value: unknown,
@@ -108,9 +141,9 @@ function requiredChoiceAnswer(
 /**
  * Create the Jev decision client when TypeSafe credentials are available.
  *
- * Jev is an optimization layer in Codex Security. Callers intentionally keep
- * their existing System-2 path as the fallback when this returns undefined or
- * when a Jev request fails.
+ * Jev is an optimization layer in Codex Security. When configured, request
+ * failures remain Jev failures after bounded retries; callers only escalate to
+ * System-2 when Jev explicitly returns an abstention such as REVIEW.
  *
  * @internal
  */
@@ -118,6 +151,7 @@ export function createJevChoiceClient(
   environment: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
   fetchImpl: JevFetch = globalThis.fetch,
+  retryOptions: JevRetryOptions = {},
 ): JevChoiceClient | undefined {
   const apiKey = environmentEntry(environment, "TYPESAFE_API_KEY")?.trim();
   if (!apiKey) return undefined;
@@ -138,78 +172,99 @@ export function createJevChoiceClient(
     async choose(state, questions) {
       signal?.throwIfAborted();
       if (Object.keys(questions).length === 0) return {};
-      let response: Response;
-      const timeoutSignal = AbortSignal.timeout(JEV_REQUEST_TIMEOUT_MS);
-      const requestSignal =
-        signal === undefined
-          ? timeoutSignal
-          : AbortSignal.any([signal, timeoutSignal]);
-      try {
-        response = await fetchImpl(
-          `${baseURL}/v1/systemone`,
-          {
+      const wait = retryOptions.wait ?? waitForJevRetry;
+      const body = JSON.stringify({
+        state,
+        model,
+        questions: Object.fromEntries(
+          Object.entries(questions).map(([name, question]) => [
+            name,
+            {
+              type: "choice",
+              instructions: question.instructions,
+              criteria: question.criteria,
+            },
+          ]),
+        ),
+      });
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= JEV_MAX_ATTEMPTS; attempt++) {
+        signal?.throwIfAborted();
+        let response: Response;
+        const timeoutSignal = AbortSignal.timeout(JEV_REQUEST_TIMEOUT_MS);
+        const requestSignal =
+          signal === undefined
+            ? timeoutSignal
+            : AbortSignal.any([signal, timeoutSignal]);
+        try {
+          response = await fetchImpl(`${baseURL}/v1/systemone`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
               Accept: "application/json",
             },
-            body: JSON.stringify({
-              state,
-              model,
-              questions: Object.fromEntries(
-                Object.entries(questions).map(([name, question]) => [
-                  name,
-                  {
-                    type: "choice",
-                    instructions: question.instructions,
-                    criteria: question.criteria,
-                  },
-                ]),
-              ),
-            }),
+            body,
             signal: requestSignal,
-          },
-        );
-      } catch (error) {
+          });
+        } catch (error) {
+          signal?.throwIfAborted();
+          lastError = new CodexSecurityError("Jev decision request failed.", {
+            cause: error,
+          });
+          if (attempt === JEV_MAX_ATTEMPTS) throw lastError;
+          await wait(jevRetryDelay(attempt), signal);
+          continue;
+        }
+
         signal?.throwIfAborted();
-        throw new CodexSecurityError("Jev decision request failed.", {
-          cause: error,
-        });
+        if (!response.ok) {
+          const error = new CodexSecurityError(
+            `Jev decision request failed (HTTP ${response.status}).`,
+          );
+          if (!retryableJevStatus(response.status)) throw error;
+          lastError = error;
+          if (attempt === JEV_MAX_ATTEMPTS) throw error;
+          await wait(jevRetryDelay(attempt), signal);
+          continue;
+        }
+
+        try {
+          const payload = await response.json();
+          if (
+            payload === null ||
+            typeof payload !== "object" ||
+            (payload as Record<string, unknown>)["answers"] === null ||
+            typeof (payload as Record<string, unknown>)["answers"] !== "object"
+          ) {
+            throw new CodexSecurityError("Jev returned an invalid response.");
+          }
+          const rawAnswers = (payload as Record<string, unknown>)[
+            "answers"
+          ] as Record<string, unknown>;
+          const answers: Record<string, JevChoiceAnswer> = {};
+          for (const [name, question] of Object.entries(questions)) {
+            answers[name] = requiredChoiceAnswer(
+              rawAnswers[name],
+              new Set(Object.keys(question.criteria)),
+            );
+          }
+          return answers;
+        } catch (error) {
+          signal?.throwIfAborted();
+          lastError =
+            error instanceof CodexSecurityError
+              ? error
+              : new CodexSecurityError("Jev returned invalid JSON.", {
+                  cause: error,
+                });
+          if (attempt === JEV_MAX_ATTEMPTS) throw lastError;
+          await wait(jevRetryDelay(attempt), signal);
+        }
       }
-      signal?.throwIfAborted();
-      if (!response.ok) {
-        throw new CodexSecurityError(
-          `Jev decision request failed (HTTP ${response.status}).`,
-        );
-      }
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch (error) {
-        throw new CodexSecurityError("Jev returned invalid JSON.", {
-          cause: error,
-        });
-      }
-      if (
-        payload === null ||
-        typeof payload !== "object" ||
-        (payload as Record<string, unknown>)["answers"] === null ||
-        typeof (payload as Record<string, unknown>)["answers"] !== "object"
-      ) {
-        throw new CodexSecurityError("Jev returned an invalid response.");
-      }
-      const rawAnswers = (payload as Record<string, unknown>)[
-        "answers"
-      ] as Record<string, unknown>;
-      const answers: Record<string, JevChoiceAnswer> = {};
-      for (const [name, question] of Object.entries(questions)) {
-        answers[name] = requiredChoiceAnswer(
-          rawAnswers[name],
-          new Set(Object.keys(question.criteria)),
-        );
-      }
-      return answers;
+      throw new CodexSecurityError("Jev decision request failed.", {
+        cause: lastError,
+      });
     },
   };
 }
