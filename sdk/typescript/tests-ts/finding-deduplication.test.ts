@@ -147,6 +147,33 @@ test("Jev handles bounded dedupe screening without invoking Codex", async () => 
   expect(result.decisions["pair-1"]!.rationale).toContain("Jev screening");
 });
 
+test("Jev screening failures fail without Luna fallback", async () => {
+  const findings = [entry(1), entry(2)];
+  const failure = new Error("synthetic Jev outage");
+  let codexCalls = 0;
+  const reviewer = new CodexDeduplicationReviewer(
+    {
+      async run<T>(_review: CodexReview<T>): Promise<T> {
+        codexCalls++;
+        throw new Error("Codex screening must not run after Jev failure.");
+      },
+    },
+    {
+      metadata: {
+        provider: "typesafe-system-one",
+        baseURL: "https://typesafe.example",
+        model: "jev-test",
+      },
+      async choose() {
+        throw failure;
+      },
+    },
+  );
+
+  await expect(reviewer.screen(findings)).rejects.toBe(failure);
+  expect(codexCalls).toBe(0);
+});
+
 test("REVIEW screening candidates continue to source-grounded pair review", async () => {
   const findings = [entry(1), entry(2)];
   let pairReviews = 0;
