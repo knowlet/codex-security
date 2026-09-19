@@ -96,8 +96,107 @@ async function choiceResponse(
         answers: { route: answer },
       });
     },
+    { wait: async () => undefined },
   )!;
 }
+
+test("Jev retries transient transport and HTTP failures before succeeding", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const client = createJevChoiceClient(
+    { TYPESAFE_API_KEY: "synthetic-typesafe-key" },
+    undefined,
+    async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("synthetic transport failure");
+      if (attempts === 2) return new Response("", { status: 503 });
+      return Response.json({
+        answers: {
+          route: {
+            type: "choice",
+            choice: "review",
+            probabilities: { fast: 0.1, review: 0.9 },
+            confidence: 0.8,
+          },
+        },
+      });
+    },
+    {
+      wait: async (delayMs) => {
+        delays.push(delayMs);
+      },
+    },
+  )!;
+
+  expect(
+    (
+      await client.choose("state", {
+        route: {
+          instructions: "Choose a route.",
+          criteria: { fast: "Fast path", review: "System-2" },
+        },
+      })
+    )["route"]?.choice,
+  ).toBe("review");
+  expect(attempts).toBe(3);
+  expect(delays).toEqual([250, 500]);
+});
+
+test("Jev retries invalid successful responses but does not retry terminal 4xx", async () => {
+  let malformedAttempts = 0;
+  const malformedClient = createJevChoiceClient(
+    { TYPESAFE_API_KEY: "synthetic-typesafe-key" },
+    undefined,
+    async () => {
+      malformedAttempts++;
+      if (malformedAttempts < 3) {
+        return Response.json({ answers: { route: { type: "choice" } } });
+      }
+      return Response.json({
+        answers: {
+          route: {
+            type: "choice",
+            choice: "fast",
+            probabilities: { fast: 0.75, review: 0.25 },
+            confidence: 0.75,
+          },
+        },
+      });
+    },
+    { wait: async () => undefined },
+  )!;
+  expect(
+    (
+      await malformedClient.choose("state", {
+        route: {
+          instructions: "Choose a route.",
+          criteria: { fast: "Fast path", review: "System-2" },
+        },
+      })
+    )["route"]?.choice,
+  ).toBe("fast");
+  expect(malformedAttempts).toBe(3);
+
+  let terminalAttempts = 0;
+  const terminalClient = createJevChoiceClient(
+    { TYPESAFE_API_KEY: "synthetic-typesafe-key" },
+    undefined,
+    async () => {
+      terminalAttempts++;
+      return new Response("", { status: 401 });
+    },
+    { wait: async () => undefined },
+  )!;
+  await expect(
+    terminalClient.choose("state", {
+      route: {
+        instructions: "Choose a route.",
+        criteria: { fast: "Fast path", review: "System-2" },
+      },
+    }),
+  ).rejects.toThrow("HTTP 401");
+  expect(terminalAttempts).toBe(1);
+});
 
 test("Jev client defaults to jev-latest and rejects answers outside the legal action set", async () => {
   let model: unknown;
