@@ -173,12 +173,6 @@ interface JevScreeningRequest {
   questions: Readonly<Record<string, JevChoiceQuestion>>;
 }
 
-class JevScreeningFallbackError extends Error {
-  constructor(public readonly originalError: unknown) {
-    super("Jev screening failed.");
-  }
-}
-
 function jevScreeningRequest(findings: readonly Finding[]): JevScreeningRequest {
   const anchor = findings[0];
   if (anchor === undefined) return { state: null, questions: {} };
@@ -238,45 +232,34 @@ export class CodexDeduplicationReviewer implements DeduplicationReviewer {
   constructor(
     private readonly runner: DeduplicationReviewRunner,
     private readonly jev?: JevChoiceClient,
-    private readonly signal?: AbortSignal,
   ) {}
 
   async screen(findings: readonly Finding[]): Promise<ScreeningResult> {
     if (this.jev !== undefined) {
       const jev = this.jev;
       const request = jevScreeningRequest(findings);
-      const execute = async (): Promise<ScreeningResult> => {
-        try {
-          return await screenWithJev(jev, findings, request);
-        } catch (error) {
-          throw new JevScreeningFallbackError(error);
-        }
-      };
-      try {
-        if (this.runner.runDecision !== undefined) {
-          const metadata = jev.metadata;
-          return await this.runner.runDecision({
-            contractVersion: JEV_SCREENING_CHECKPOINT_VERSION,
-            stage: "screening",
-            provider: metadata.provider,
-            model: metadata.model,
-            settings: metadata,
-            input: { findings, request },
-            contract: {
-              schema: z.toJSONSchema(screeningSchema, {
-                target: "openapi-3.0",
-              }),
-              validation: "exact-assigned-screening-slots",
-            },
-            validate: (value) => validateScreening(value, findings),
-            execute,
-          });
-        }
-        return await execute();
-      } catch (error) {
-        this.signal?.throwIfAborted();
-        if (!(error instanceof JevScreeningFallbackError)) throw error;
+      const execute = async (): Promise<ScreeningResult> =>
+        await screenWithJev(jev, findings, request);
+      if (this.runner.runDecision !== undefined) {
+        const metadata = jev.metadata;
+        return await this.runner.runDecision({
+          contractVersion: JEV_SCREENING_CHECKPOINT_VERSION,
+          stage: "screening",
+          provider: metadata.provider,
+          model: metadata.model,
+          settings: metadata,
+          input: { findings, request },
+          contract: {
+            schema: z.toJSONSchema(screeningSchema, {
+              target: "openapi-3.0",
+            }),
+            validation: "exact-assigned-screening-slots",
+          },
+          validate: (value) => validateScreening(value, findings),
+          execute,
+        });
       }
+      return await execute();
     }
     return await this.runner.run({
       stage: "screening",
