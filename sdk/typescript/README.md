@@ -1325,8 +1325,11 @@ Jev does not generate the assessment text: for a concrete Jev severity, the
 same Jev request also selects the qualitative confidence band, while a separate
 read-only Codex turn can only supply `rubricLabel`, `rationale`, and
 `reviewTrigger`; its output schema cannot change the selected decision, level,
-or confidence. A Jev `review` choice, transport/schema failure, or missing
-TypeSafe key falls back to the previous full Codex classification. No source
+or confidence. A Jev `review` choice explicitly escalates to the previous full
+Codex classifier. If no TypeSafe key is configured, the existing Codex path is
+used unchanged. Once Jev is configured, transient transport/HTTP or malformed
+response failures are retried by the Jev client; exhausted retries fail the
+classification rather than silently changing decision engines. No source
 inspection, tools, or new validation are allowed in either path. `--model` and
 `--effort` select the Codex explanation/System-2 fallback model and reasoning
 effort. TypeSafe follows `TYPESAFE_BASE_URL` and `TYPESAFE_DEFAULT_MODEL` when
@@ -1988,8 +1991,10 @@ runs its decision stages in the calling SDK/CLI process. With
 `TYPESAFE_API_KEY`, Jev replaces the bounded Luna SAME/DISTINCT screening and
 may return `REVIEW` to escalate an ambiguous pair. The source-grounded final
 pair review remains Sol because it must inspect evidence and, for SAME findings,
-generate a lossless merged finding. If Jev is unavailable or not configured,
-screening falls back to the existing Luna path. Once all reviews finish, the
+generate a lossless merged finding. If Jev is not configured, screening uses the
+existing Luna path. Once Jev is configured, request/response failures are retried
+and then fail deduplication if still unsuccessful; only `REVIEW` escalates the
+affected pair to Sol. Once all reviews finish, the
 workflow posts accepted groups to the service. It does not re-upload findings or
 change scan artifacts.
 
@@ -2000,7 +2005,7 @@ codex-security dedupe --scan SCAN_ID --findings-url http://127.0.0.1:3000 --json
 Deduplication runs up to 8 jobs concurrently by default. Set `--concurrency N`
 to choose a positive integer, or `--concurrency 1` for serial execution. The SDK
 equivalent is `concurrency: N`. Candidate neighborhoods are fetched first, with
-the same concurrency limit. Screening jobs (Jev when configured, Luna fallback)
+the same concurrency limit. Screening jobs (Jev when configured, otherwise Luna)
 and ready Sol pair reviews then use two queues sharing one worker pool, with at
 most 8 jobs running in total by default. Each available worker takes a ready job
 as soon as its current job finishes; it does not wait for a batch to finish.
@@ -2235,9 +2240,11 @@ use another workflow ID for a fresh review rather than changing that saved resul
    reviews so every pair's screening dependencies are known.
 2. Screen each nonempty neighborhood with TypeSafe Jev when configured. Jev
    returns `SAME`, `DISTINCT`, or `REVIEW`; `REVIEW` keeps the pair eligible
-   for source-grounded review. If Jev is unavailable or its response is invalid,
-   fall back to the existing `gpt-5.6-luna` `xhigh` screening. The screening
-   covers every anchor-neighbor pair; nominations between neighbors are rejected.
+   for source-grounded review. Without a TypeSafe key, use the existing
+   `gpt-5.6-luna` `xhigh` screening. With Jev enabled, transient request or
+   malformed-response failures are retried up to three attempts and then fail the
+   workflow; they never switch the decision back to Luna. The screening covers
+   every anchor-neighbor pair; nominations between neighbors are rejected.
 3. Independently review each eligible pair once with `gpt-5.6-sol` at `high`
    reasoning effort after all screenings covering that pair finish without a
    `DISTINCT` decision. Screening and ready Sol jobs share the configured worker
