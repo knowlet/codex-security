@@ -223,39 +223,45 @@ test("rejects a standard rubric label that contradicts the Jev level", async () 
   ).rejects.toThrow("invalid assessment");
 });
 
-test("Jev REVIEW and Jev failures fall back to the existing System-2 classifier", async () => {
+test("Jev REVIEW escalates to the existing System-2 classifier", async () => {
   const rubricPath = await document("Apply the supplied policy.");
-  for (const jev of [
-    fakeJev("review").jev,
-    {
-      metadata: {
-        provider: "typesafe-system-one",
-        baseURL: "https://typesafe.example",
-        model: "jev-test",
-      },
-      async choose() {
-        throw new Error("synthetic Jev outage");
-      },
+  const { codex, calls } = fakeCodex(assessed);
+  const result = await classifySeverity([finding], {
+    rubricPath,
+    codex,
+    jev: fakeJev("review").jev,
+  });
+  expect(result.assessments[0]).toMatchObject({
+    ...assessed,
+    source: "rubric",
+  });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.prompt).toContain(
+    "Classify the supplied security report using the supplied rubric",
+  );
+  expect(calls[0]!.prompt).not.toContain(
+    "Jev has already made the severity decision",
+  );
+});
+
+test("Jev failures fail severity classification without Codex fallback", async () => {
+  const rubricPath = await document("Apply the supplied policy.");
+  const { codex, calls } = fakeCodex(assessed);
+  const failure = new Error("synthetic Jev outage");
+  const jev: NonNullable<ClassifySeverityOptions["jev"]> = {
+    metadata: {
+      provider: "typesafe-system-one",
+      baseURL: "https://typesafe.example",
+      model: "jev-test",
     },
-  ] satisfies NonNullable<ClassifySeverityOptions["jev"]>[]) {
-    const { codex, calls } = fakeCodex(assessed);
-    const result = await classifySeverity([finding], {
-      rubricPath,
-      codex,
-      jev,
-    });
-    expect(result.assessments[0]).toMatchObject({
-      ...assessed,
-      source: "rubric",
-    });
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.prompt).toContain(
-      "Classify the supplied security report using the supplied rubric",
-    );
-    expect(calls[0]!.prompt).not.toContain(
-      "Jev has already made the severity decision",
-    );
-  }
+    async choose() {
+      throw failure;
+    },
+  };
+  await expect(
+    classifySeverity([finding], { rubricPath, codex, jev }),
+  ).rejects.toBe(failure);
+  expect(calls).toHaveLength(0);
 });
 
 test("represents policy exclusions independently from Low", async () => {
