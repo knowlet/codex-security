@@ -85,14 +85,16 @@ command uploads completed findings and their repository ID. The SDK and
 reviews locally, and persist accepted duplicate groups; `--all-repositories`
 opts into the broader scope. When `TYPESAFE_API_KEY` is set, bounded dedupe
 screening uses TypeSafe Jev while source-grounded final pair review stays on
-Codex. Jev may abstain to the Codex path, and TypeSafe failures fall back to the
-existing Codex screening.
+Codex. Only an explicit Jev `REVIEW` abstention escalates to the Codex path.
+TypeSafe transport, HTTP, or response-contract failures are retried by the Jev
+client and fail the command if retries are exhausted.
 
 Use `npx @openai/codex-security classify-severity --scan SCAN_ID --rubric /path/to/policy.md`
 to assess selected findings under your own policy before publishing tickets.
 With the same TypeSafe key, Jev owns the bounded severity decision and Codex only
-generates its explanation; ambiguous Jev decisions fall back to the existing
-System-2 classification.
+generates its explanation; only an explicit Jev `review` decision escalates to
+the existing System-2 classifier. Configured Jev failures are retried and remain
+terminal if retries are exhausted.
 Scan classification checkpoints each finding in SQLite and reuses matching
 assessments on reruns; `--reprocess` forces reassessment. The SDK exposes the same
 classification operation; original scan severity stays unchanged. See [severity classification](sdk/typescript/README.md#classify-finding-severity).
